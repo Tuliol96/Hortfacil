@@ -3,7 +3,7 @@ import sys
 from PySide6.QtWidgets import QApplication
 
 from banco.banco import Banco
-from telas.tela_principal import TelaPrincipal
+from telas.ui.tela_principal import TelaPrincipal
 
 
 def main():
@@ -13,7 +13,7 @@ def main():
 
     app = QApplication(sys.argv)
 
-    janela = TelaPrincipal()
+    janela = TelaPrincipal(banco)
     janela.show()
 
     sys.exit(app.exec())
