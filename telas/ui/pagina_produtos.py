@@ -1,6 +1,7 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QFormLayout,
     QHBoxLayout,
     QHeaderView,
@@ -18,6 +19,14 @@ from controllers.produto_controller import ProdutoController
 
 COLUNAS = ["ID", "Nome", "Categoria", "Unidade", "Preço", "Favorito"]
 
+PRECO_VARIAVEL_TEXTO = "Variável"
+
+
+def _formatar_preco(preco):
+    if preco is None:
+        return PRECO_VARIAVEL_TEXTO
+    return f"R$ {preco:.2f}"
+
 
 class PaginaProdutos(QWidget):
 
@@ -28,6 +37,7 @@ class PaginaProdutos(QWidget):
         self.id_selecionado = None
 
         self.montar_interface()
+        self.carregar_opcoes()
         self.carregar_produtos()
 
     def montar_interface(self):
@@ -46,9 +56,18 @@ class PaginaProdutos(QWidget):
         formulario = QFormLayout()
 
         self.campo_nome = QLineEdit()
-        self.campo_categoria = QLineEdit()
-        self.campo_unidade = QLineEdit()
+
+        self.campo_categoria = QComboBox()
+        self.campo_categoria.setEditable(True)
+        self.campo_categoria.setInsertPolicy(QComboBox.NoInsert)
+
+        self.campo_unidade = QComboBox()
+        self.campo_unidade.setEditable(True)
+        self.campo_unidade.setInsertPolicy(QComboBox.NoInsert)
+
         self.campo_preco = QLineEdit()
+        self.campo_preco.setPlaceholderText("Deixe em branco se o preço variar")
+
         self.campo_favorito = QCheckBox("Produto favorito")
 
         formulario.addRow("Nome:", self.campo_nome)
@@ -67,7 +86,9 @@ class PaginaProdutos(QWidget):
 
         self.botao_salvar = QPushButton("Cadastrar")
         self.botao_excluir = QPushButton("Excluir")
+        self.botao_excluir.setProperty("perigo", True)
         self.botao_limpar = QPushButton("Limpar")
+        self.botao_limpar.setProperty("limpar", True)
 
         self.botao_salvar.clicked.connect(self.salvar_produto)
         self.botao_excluir.clicked.connect(self.excluir_produto)
@@ -96,6 +117,18 @@ class PaginaProdutos(QWidget):
 
         layout.addWidget(self.tabela)
 
+    def carregar_opcoes(self):
+
+        categoria_atual = self.campo_categoria.currentText()
+        self.campo_categoria.clear()
+        self.campo_categoria.addItems(self.controller.listar_categorias())
+        self.campo_categoria.setCurrentText(categoria_atual)
+
+        unidade_atual = self.campo_unidade.currentText()
+        self.campo_unidade.clear()
+        self.campo_unidade.addItems(self.controller.listar_unidades())
+        self.campo_unidade.setCurrentText(unidade_atual)
+
     def carregar_produtos(self):
 
         produtos = self.controller.listar_produtos()
@@ -108,7 +141,7 @@ class PaginaProdutos(QWidget):
             self.tabela.setItem(linha, 2, QTableWidgetItem(produto["categoria"]))
             self.tabela.setItem(linha, 3, QTableWidgetItem(produto["unidade"]))
             self.tabela.setItem(
-                linha, 4, QTableWidgetItem(f"{produto['preco']:.2f}")
+                linha, 4, QTableWidgetItem(_formatar_preco(produto["preco"]))
             )
             self.tabela.setItem(
                 linha, 5, QTableWidgetItem("Sim" if produto["favorito"] else "Não")
@@ -124,11 +157,18 @@ class PaginaProdutos(QWidget):
         linha = linhas[0].row()
 
         self.id_selecionado = int(self.tabela.item(linha, 0).text())
-        self.campo_nome.setText(self.tabela.item(linha, 1).text())
-        self.campo_categoria.setText(self.tabela.item(linha, 2).text())
-        self.campo_unidade.setText(self.tabela.item(linha, 3).text())
-        self.campo_preco.setText(self.tabela.item(linha, 4).text())
-        self.campo_favorito.setChecked(self.tabela.item(linha, 5).text() == "Sim")
+
+        # busca os dados originais no banco em vez de reler a tabela,
+        # pra não confundir o texto "Variável" com um preço de verdade
+        produto = self.controller.buscar_produto(self.id_selecionado)
+
+        self.campo_nome.setText(produto["nome"])
+        self.campo_categoria.setCurrentText(produto["categoria"])
+        self.campo_unidade.setCurrentText(produto["unidade"])
+        self.campo_preco.setText(
+            "" if produto["preco"] is None else f"{produto['preco']:.2f}"
+        )
+        self.campo_favorito.setChecked(bool(produto["favorito"]))
 
         self.botao_salvar.setText("Atualizar")
 
@@ -136,8 +176,8 @@ class PaginaProdutos(QWidget):
 
         self.id_selecionado = None
         self.campo_nome.clear()
-        self.campo_categoria.clear()
-        self.campo_unidade.clear()
+        self.campo_categoria.setCurrentText("")
+        self.campo_unidade.setCurrentText("")
         self.campo_preco.clear()
         self.campo_favorito.setChecked(False)
         self.botao_salvar.setText("Cadastrar")
@@ -146,8 +186,8 @@ class PaginaProdutos(QWidget):
     def salvar_produto(self):
 
         nome = self.campo_nome.text().strip()
-        categoria = self.campo_categoria.text().strip()
-        unidade = self.campo_unidade.text().strip()
+        categoria = self.campo_categoria.currentText().strip()
+        unidade = self.campo_unidade.currentText().strip()
         preco_texto = self.campo_preco.text().strip().replace(",", ".")
 
         if not nome:
@@ -162,15 +202,18 @@ class PaginaProdutos(QWidget):
             QMessageBox.warning(self, "Campo obrigatório", "Informe a unidade.")
             return
 
-        try:
-            preco = float(preco_texto)
-        except ValueError:
-            QMessageBox.warning(self, "Preço inválido", "Informe um preço numérico válido.")
-            return
+        preco = None
 
-        if preco < 0:
-            QMessageBox.warning(self, "Preço inválido", "O preço não pode ser negativo.")
-            return
+        if preco_texto:
+            try:
+                preco = float(preco_texto)
+            except ValueError:
+                QMessageBox.warning(self, "Preço inválido", "Informe um preço numérico válido ou deixe em branco.")
+                return
+
+            if preco < 0:
+                QMessageBox.warning(self, "Preço inválido", "O preço não pode ser negativo.")
+                return
 
         favorito = self.campo_favorito.isChecked()
 
@@ -182,6 +225,7 @@ class PaginaProdutos(QWidget):
             )
 
         self.limpar_formulario()
+        self.carregar_opcoes()
         self.carregar_produtos()
 
     def excluir_produto(self):

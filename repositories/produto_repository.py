@@ -79,6 +79,28 @@ class ProdutoRepository:
 
         self.banco.conexao.commit()
 
+    def listar_categorias(self):
+
+        self.banco.cursor.execute("""
+            SELECT DISTINCT categoria
+            FROM produtos
+            WHERE categoria IS NOT NULL AND categoria != ''
+            ORDER BY categoria
+        """)
+
+        return [linha["categoria"] for linha in self.banco.cursor.fetchall()]
+
+    def listar_unidades(self):
+
+        self.banco.cursor.execute("""
+            SELECT DISTINCT unidade
+            FROM produtos
+            WHERE unidade IS NOT NULL AND unidade != ''
+            ORDER BY unidade
+        """)
+
+        return [linha["unidade"] for linha in self.banco.cursor.fetchall()]
+
     def desativar(self, id_produto):
 
         self.banco.cursor.execute("""

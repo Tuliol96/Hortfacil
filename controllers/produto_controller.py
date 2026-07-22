@@ -10,6 +10,12 @@ class ProdutoController:
     def listar_produtos(self):
         return self.repository.listar()
 
+    def listar_categorias(self):
+        return self.repository.listar_categorias()
+
+    def listar_unidades(self):
+        return self.repository.listar_unidades()
+
     def cadastrar_produto(
         self,
         nome,
@@ -23,7 +29,7 @@ class ProdutoController:
             nome=nome.strip(),
             categoria=categoria,
             unidade=unidade,
-            preco=float(preco),
+            preco=float(preco) if preco not in (None, "") else None,
             favorito=favorito
         )
 
@@ -44,7 +50,7 @@ class ProdutoController:
             nome=nome.strip(),
             categoria=categoria,
             unidade=unidade,
-            preco=float(preco),
+            preco=float(preco) if preco not in (None, "") else None,
             favorito=favorito
         )
 

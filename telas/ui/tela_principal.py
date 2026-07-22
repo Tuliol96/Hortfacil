@@ -72,9 +72,15 @@ class TelaPrincipal(QMainWindow):
         # Menu lateral
         # ==========================
 
-        menu = QListWidget()
+        self.menu = QListWidget()
+        menu = self.menu
         menu.addItems(self.ITENS_MENU)
         menu.setFixedWidth(220)
+
+        # Evita que o Qt selecione a primeira linha sozinho quando a janela
+        # ganha foco ao abrir, o que trocaria a página inicial pela primeira
+        # aba do menu (Pedidos) sem o usuário clicar em nada.
+        menu.setFocusPolicy(Qt.NoFocus)
 
         menu.setStyleSheet("""
             QListWidget{
@@ -100,16 +106,20 @@ class TelaPrincipal(QMainWindow):
         # ==========================
 
         self.stack = QStackedWidget()
-        self.stack.setStyleSheet("background:white;")
+
+        self.pagina_pedidos = PaginaPedidos(self.banco)
+        self.pagina_clientes = PaginaClientes(self.banco)
 
         self.stack.addWidget(PaginaInicio())
-        self.stack.addWidget(PaginaPedidos())
-        self.stack.addWidget(PaginaClientes())
+        self.stack.addWidget(self.pagina_pedidos)
+        self.stack.addWidget(self.pagina_clientes)
         self.stack.addWidget(PaginaProdutos(self.banco))
         self.stack.addWidget(_pagina_em_construcao("Estoque"))
-        self.stack.addWidget(PaginaFechamentos())
+        self.stack.addWidget(PaginaFechamentos(self.banco))
         self.stack.addWidget(_pagina_em_construcao("Relatórios"))
-        self.stack.addWidget(PaginaConfiguracoes())
+        self.stack.addWidget(PaginaConfiguracoes(self.banco))
+
+        self.pagina_pedidos.solicitou_ver_cliente.connect(self.mostrar_cliente)
 
         menu.currentRowChanged.connect(
             lambda linha: self.stack.setCurrentIndex(linha + 1)
@@ -119,3 +129,10 @@ class TelaPrincipal(QMainWindow):
         layout_principal.addWidget(self.stack)
 
         central.setLayout(layout_principal)
+
+    def mostrar_cliente(self, cliente_id):
+
+        indice = self.stack.indexOf(self.pagina_clientes)
+        self.stack.setCurrentIndex(indice)
+        self.menu.setCurrentRow(indice - 1)
+        self.pagina_clientes.selecionar_cliente_por_id(cliente_id)

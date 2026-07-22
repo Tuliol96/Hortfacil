@@ -7,7 +7,7 @@ class Produto:
     nome: str = ""
     categoria: str = ""
     unidade: str = ""
-    preco: float = 0.0
+    preco: float | None = None
     favorito: bool = False
     ativo: bool = True
     criado_em: str = ""
