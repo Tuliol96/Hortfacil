@@ -18,14 +18,15 @@ class PedidoRepository:
         for item in itens:
             self.banco.cursor.execute("""
                 INSERT INTO pedido_itens
-                (pedido_id, produto_id, quantidade, preco_unitario, subtotal)
-                VALUES (?, ?, ?, ?, ?)
+                (pedido_id, produto_id, quantidade, preco_unitario, subtotal, sp)
+                VALUES (?, ?, ?, ?, ?, ?)
             """, (
                 pedido_id,
                 item.produto_id,
                 item.quantidade,
                 item.preco_unitario,
                 item.subtotal,
+                int(item.sp),
             ))
 
         self.banco.conexao.commit()
@@ -53,9 +54,11 @@ class PedidoRepository:
 
         self.banco.cursor.execute("""
             SELECT
+                pedido_itens.produto_id,
                 pedido_itens.quantidade,
                 pedido_itens.preco_unitario,
                 pedido_itens.subtotal,
+                pedido_itens.sp,
                 produtos.nome AS produto_nome,
                 produtos.unidade AS produto_unidade
             FROM pedido_itens
@@ -64,6 +67,35 @@ class PedidoRepository:
         """, (pedido_id,))
 
         return self.banco.cursor.fetchall()
+
+    def atualizar_itens(self, pedido_id, itens: list[ItemPedido], total):
+        """Substitui todos os itens do pedido pela lista informada e atualiza o total."""
+
+        self.banco.cursor.execute(
+            "DELETE FROM pedido_itens WHERE pedido_id = ?", (pedido_id,)
+        )
+
+        for item in itens:
+            self.banco.cursor.execute("""
+                INSERT INTO pedido_itens
+                (pedido_id, produto_id, quantidade, preco_unitario, subtotal, sp)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                pedido_id,
+                item.produto_id,
+                item.quantidade,
+                item.preco_unitario,
+                item.subtotal,
+                int(item.sp),
+            ))
+
+        self.banco.cursor.execute("""
+            UPDATE pedidos
+            SET total = ?, atualizado_em = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (total, pedido_id))
+
+        self.banco.conexao.commit()
 
     def buscar_por_id(self, pedido_id):
 
@@ -140,16 +172,16 @@ class PedidoRepository:
 
         return self.banco.cursor.fetchall()
 
-    def emitir(self, pedido_id):
+    def emitir(self, pedido_id, data_emissao):
 
         self.banco.cursor.execute("""
             UPDATE pedidos
             SET
                 emitido = 1,
-                data_emissao = CURRENT_TIMESTAMP,
+                data_emissao = ?,
                 atualizado_em = CURRENT_TIMESTAMP
             WHERE id = ?
-        """, (pedido_id,))
+        """, (data_emissao, pedido_id))
 
         self.banco.conexao.commit()
 

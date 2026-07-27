@@ -1,5 +1,6 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QHBoxLayout,
     QHeaderView,
@@ -103,6 +104,10 @@ class PaginaPedidos(QWidget):
         self.campo_preco_unitario.setPlaceholderText("Preço unit.")
         self.campo_preco_unitario.setFixedWidth(100)
 
+        self.checkbox_sp = QCheckBox("SP")
+        self.checkbox_sp.setToolTip("Produto de origem paulista, com preço à parte")
+        self.checkbox_sp.toggled.connect(self._ao_alternar_sp)
+
         self.botao_adicionar_item = QPushButton("Adicionar item")
         self.botao_adicionar_item.clicked.connect(self.salvar_item)
 
@@ -114,6 +119,7 @@ class PaginaPedidos(QWidget):
         linha_item.addWidget(self.combo_produto, 1)
         linha_item.addWidget(self.campo_quantidade)
         linha_item.addWidget(self.campo_preco_unitario)
+        linha_item.addWidget(self.checkbox_sp)
         linha_item.addWidget(self.botao_adicionar_item)
         linha_item.addWidget(self.botao_cancelar_edicao_item)
         layout.addLayout(linha_item)
@@ -282,6 +288,81 @@ class PaginaPedidos(QWidget):
         return preco
 
     # ==========================
+    # Produto SP (origem paulista, com preço à parte)
+    # ==========================
+
+    def _ao_alternar_sp(self, marcado):
+
+        if not marcado:
+            return
+
+        produto = self.combo_produto.currentData()
+        nome = produto["nome"] if produto else "produto"
+
+        texto_preco_atual = self.campo_preco_unitario.text().strip().replace(",", ".")
+        try:
+            valor_inicial = float(texto_preco_atual)
+        except ValueError:
+            valor_inicial = 0.0
+
+        preco, confirmado = QInputDialog.getDouble(
+            self,
+            "Preço SP",
+            f"Informe o novo preço (SP) para \"{nome}\":",
+            valor_inicial,
+            0.0,
+            999999.0,
+            2,
+        )
+
+        if not confirmado:
+            self.checkbox_sp.blockSignals(True)
+            self.checkbox_sp.setChecked(False)
+            self.checkbox_sp.blockSignals(False)
+            return
+
+        self.campo_preco_unitario.setText(f"{preco:.2f}")
+
+    def _marcar_sp_sem_perguntar(self, marcado):
+        """Ajusta o checkbox SP ao selecionar um item já lançado, sem
+        reabrir o prompt de preço (que é só para quando o usuário marca)."""
+
+        self.checkbox_sp.blockSignals(True)
+        self.checkbox_sp.setChecked(marcado)
+        self.checkbox_sp.blockSignals(False)
+
+    # ==========================
+    # Produto ambíguo (texto do pedido bateu com mais de um cadastrado)
+    # ==========================
+
+    def _escolher_produto_ambiguo(self, item_ambiguo):
+        """
+        Pergunta ao usuário qual produto usar quando uma linha do pedido
+        bate com mais de um produto cadastrado (ex.: "crespa" bate com
+        "Alface Crespa" e "Salsa Crespa"). Retorna None se cancelado.
+        """
+
+        nomes_candidatos = [produto["nome"] for produto in item_ambiguo.candidatos]
+
+        escolha, confirmado = QInputDialog.getItem(
+            self,
+            "Produto ambíguo",
+            f"A linha \"{item_ambiguo.linha_original}\" bateu com mais de um "
+            "produto cadastrado.\nQual produto devo usar?",
+            nomes_candidatos,
+            0,
+            False,
+        )
+
+        if not confirmado:
+            return None
+
+        return next(
+            produto for produto in item_ambiguo.candidatos
+            if produto["nome"] == escolha
+        )
+
+    # ==========================
     # Itens do pedido atual
     # ==========================
 
@@ -306,6 +387,7 @@ class PaginaPedidos(QWidget):
 
         self.campo_quantidade.setText(f"{item['quantidade']:g}")
         self.campo_preco_unitario.setText(f"{item['preco_unitario']:.2f}")
+        self._marcar_sp_sem_perguntar(item.get("sp", False))
 
         self.botao_adicionar_item.setText("Atualizar item")
         self.botao_cancelar_edicao_item.setVisible(True)
@@ -315,11 +397,12 @@ class PaginaPedidos(QWidget):
         self.indice_item_selecionado = None
         self.campo_quantidade.clear()
         self._auto_preencher_preco(self.combo_produto.currentIndex())
+        self._marcar_sp_sem_perguntar(False)
         self.tabela_itens.clearSelection()
         self.botao_adicionar_item.setText("Adicionar item")
         self.botao_cancelar_edicao_item.setVisible(False)
 
-    def adicionar_item(self, produto_id, nome, unidade, quantidade, preco_unitario):
+    def adicionar_item(self, produto_id, nome, unidade, quantidade, preco_unitario, sp=False):
 
         self.itens_pedido.append({
             "produto_id": produto_id,
@@ -327,6 +410,7 @@ class PaginaPedidos(QWidget):
             "unidade": unidade,
             "quantidade": quantidade,
             "preco_unitario": preco_unitario,
+            "sp": sp,
         })
         self.atualizar_tabela_itens()
 
@@ -375,6 +459,7 @@ class PaginaPedidos(QWidget):
             "unidade": produto["unidade"],
             "quantidade": quantidade,
             "preco_unitario": preco_unitario,
+            "sp": self.checkbox_sp.isChecked(),
         }
 
         if self.indice_item_selecionado is not None:
@@ -407,7 +492,9 @@ class PaginaPedidos(QWidget):
             subtotal = item["quantidade"] * item["preco_unitario"]
             total += subtotal
 
-            self.tabela_itens.setItem(linha, 0, QTableWidgetItem(item["nome"]))
+            nome = item["nome"] + (" (SP)" if item.get("sp") else "")
+
+            self.tabela_itens.setItem(linha, 0, QTableWidgetItem(nome))
             self.tabela_itens.setItem(linha, 1, QTableWidgetItem(item["unidade"]))
             self.tabela_itens.setItem(linha, 2, QTableWidgetItem(f"{item['quantidade']:g}"))
             self.tabela_itens.setItem(
@@ -473,7 +560,41 @@ class PaginaPedidos(QWidget):
                 preco_unitario,
             )
 
+        itens_ambiguos_ignorados = []
+
+        for item_ambiguo in resultado.itens_ambiguos:
+            produto_escolhido = self._escolher_produto_ambiguo(item_ambiguo)
+
+            if produto_escolhido is None:
+                itens_ambiguos_ignorados.append(item_ambiguo.linha_original)
+                continue
+
+            preco_unitario = self._obter_preco(
+                produto_escolhido["nome"],
+                produto_escolhido["unidade"],
+                produto_escolhido["preco"],
+            )
+
+            if preco_unitario is None:
+                itens_sem_preco_informado.append(produto_escolhido["nome"])
+                continue
+
+            self.adicionar_item(
+                produto_escolhido["id"],
+                produto_escolhido["nome"],
+                produto_escolhido["unidade"],
+                item_ambiguo.quantidade,
+                preco_unitario,
+            )
+
         avisos = []
+
+        if itens_ambiguos_ignorados:
+            lista = "\n".join(f"- {linha}" for linha in itens_ambiguos_ignorados)
+            avisos.append(
+                "Os itens abaixo bateram com mais de um produto e não foram "
+                f"adicionados porque a escolha foi cancelada:\n\n{lista}"
+            )
 
         if resultado.nao_reconhecidos:
             lista = "\n".join(f"- {linha}" for linha in resultado.nao_reconhecidos)
@@ -509,7 +630,7 @@ class PaginaPedidos(QWidget):
             return
 
         itens = [
-            (item["produto_id"], item["quantidade"], item["preco_unitario"])
+            (item["produto_id"], item["quantidade"], item["preco_unitario"], item.get("sp", False))
             for item in self.itens_pedido
         ]
 

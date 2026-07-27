@@ -20,3 +20,4 @@ class ItemPedido:
     quantidade: float = 0.0
     preco_unitario: float = 0.0
     subtotal: float = 0.0
+    sp: bool = False

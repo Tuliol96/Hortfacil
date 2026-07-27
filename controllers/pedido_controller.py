@@ -22,8 +22,8 @@ class PedidoController:
     def excluir_pedido(self, pedido_id):
         self.repository.excluir(pedido_id)
 
-    def emitir_pedido(self, pedido_id):
-        self.repository.emitir(pedido_id)
+    def emitir_pedido(self, pedido_id, data_emissao):
+        self.repository.emitir(pedido_id, data_emissao)
 
     def listar_pedidos_por_cliente_periodo(self, cliente_id, data_inicio, data_fim):
         return self.repository.listar_por_cliente_periodo(cliente_id, data_inicio, data_fim)
@@ -32,7 +32,7 @@ class PedidoController:
         return self.repository.resumo_produtos_por_cliente_periodo(cliente_id, data_inicio, data_fim)
 
     def criar_pedido(self, cliente_id, itens):
-        """itens: lista de tuplas (produto_id, quantidade, preco_unitario)"""
+        """itens: lista de tuplas (produto_id, quantidade, preco_unitario, sp)"""
 
         itens_pedido = [
             ItemPedido(
@@ -40,8 +40,9 @@ class PedidoController:
                 quantidade=quantidade,
                 preco_unitario=preco_unitario,
                 subtotal=round(quantidade * preco_unitario, 2),
+                sp=sp,
             )
-            for produto_id, quantidade, preco_unitario in itens
+            for produto_id, quantidade, preco_unitario, sp in itens
         ]
 
         total = round(sum(item.subtotal for item in itens_pedido), 2)
@@ -49,3 +50,21 @@ class PedidoController:
         pedido = Pedido(cliente_id=cliente_id, total=total)
 
         return self.repository.inserir(pedido, itens_pedido)
+
+    def atualizar_pedido(self, pedido_id, itens):
+        """itens: lista de tuplas (produto_id, quantidade, preco_unitario, sp)"""
+
+        itens_pedido = [
+            ItemPedido(
+                produto_id=produto_id,
+                quantidade=quantidade,
+                preco_unitario=preco_unitario,
+                subtotal=round(quantidade * preco_unitario, 2),
+                sp=sp,
+            )
+            for produto_id, quantidade, preco_unitario, sp in itens
+        ]
+
+        total = round(sum(item.subtotal for item in itens_pedido), 2)
+
+        self.repository.atualizar_itens(pedido_id, itens_pedido, total)

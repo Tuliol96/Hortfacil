@@ -128,12 +128,16 @@ class Banco:
 
                 subtotal REAL NOT NULL,
 
+                sp INTEGER NOT NULL DEFAULT 0,
+
                 FOREIGN KEY (pedido_id) REFERENCES pedidos (id),
 
                 FOREIGN KEY (produto_id) REFERENCES produtos (id)
 
             )
         """)
+
+        self._migrar_sp_pedido_itens()
 
         # ==========================
         # CONFIGURAÇÕES DA EMPRESA (linha única)
@@ -242,6 +246,22 @@ class Banco:
             """)
 
         self.conexao.commit()
+
+    def _migrar_sp_pedido_itens(self):
+        """
+        Bancos criados antes desta versão não têm a coluna 'sp' (produto
+        de origem paulista) em pedido_itens. Adiciona a coluna, com os
+        itens já existentes marcados como não-SP.
+        """
+
+        self.cursor.execute("PRAGMA table_info(pedido_itens)")
+        colunas = {c["name"] for c in self.cursor.fetchall()}
+
+        if "sp" not in colunas:
+            self.cursor.execute(
+                "ALTER TABLE pedido_itens ADD COLUMN sp INTEGER NOT NULL DEFAULT 0"
+            )
+            self.conexao.commit()
 
     def fechar(self):
         self.conexao.close()
