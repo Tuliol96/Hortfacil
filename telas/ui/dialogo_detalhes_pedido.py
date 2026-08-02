@@ -1,8 +1,11 @@
+import base64
 import re
+from functools import lru_cache
+from pathlib import Path
 
-from PySide6.QtCore import QDate, QMarginsF, QSizeF, Qt, Signal
-from PySide6.QtGui import QFont, QPageLayout, QPageSize, QTextDocument
-from PySide6.QtPrintSupport import QPrintDialog, QPrinter
+from PySide6.QtCore import QDate, Qt, QUrl, Signal
+from PySide6.QtGui import QDesktopServices, QTextDocument
+from PySide6.QtPrintSupport import QPrinter
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -31,10 +34,48 @@ COLUNAS = ["Produto", "Unidade", "Quantidade", "Preço Unit.", "Subtotal"]
 
 NOME_EMPRESA_PADRAO = "HORTFÁCIL"
 
+# Paleta baseada na logo (folha verde + traço amarelo/dourado). O fundo do
+# cabeçalho e da tabela fica escuro de propósito: mantém contraste alto e
+# imprime de forma econômica em impressoras preto-e-branco.
+COR_VERDE = "#4A7C2F"
+COR_AMARELO = "#E8A33D"
+COR_ESCURA = "#2B2B2B"
+
+PASTA_RAIZ_PROJETO = Path(__file__).resolve().parent.parent.parent
+
+# Ordem de preferência dos arquivos de logo para o cabeçalho do PDF: usa a
+# versão colorida se ela existir no projeto, com o logo padrão como
+# fallback (que já é colorido, mas em resolução menor).
+PASTA_IMAGENS = PASTA_RAIZ_PROJETO / "imagens"
+CAMINHOS_LOGO_PDF = [
+    PASTA_IMAGENS / "logo_colorida.png",
+    PASTA_IMAGENS / "logo.jpeg",
+]
+
+# Pasta onde os cupons térmicos são salvos como HTML: impressão via o
+# diálogo de impressão do navegador (com @page ajustando a largura da
+# bobina) fica mais fiel numa impressora térmica do que o pipeline
+# QPrinter/driver do Qt.
+PASTA_CUPONS = PASTA_RAIZ_PROJETO / "relatorios"
+
 
 def _nome_arquivo_seguro(texto):
     texto = re.sub(r'[\\/:*?"<>|]', "", texto).strip()
     return texto or "cliente"
+
+
+@lru_cache(maxsize=1)
+def _logo_data_uri():
+    """Lê o arquivo de logo do disco e retorna como data URI base64, para
+    embutir diretamente no HTML do QTextDocument (funciona tanto na tela
+    quanto no PDF exportado, sem depender de addResource)."""
+
+    for caminho in CAMINHOS_LOGO_PDF:
+        if caminho.exists():
+            mime = "image/png" if caminho.suffix.lower() == ".png" else "image/jpeg"
+            dados = base64.b64encode(caminho.read_bytes()).decode("ascii")
+            return f"data:{mime};base64,{dados}"
+    return None
 
 
 class DetalhesPedidoDialog(QDialog):
@@ -602,39 +643,87 @@ class DetalhesPedidoDialog(QDialog):
     # Impressão em PDF
     # ==========================
 
+    def _html_cabecalho_pdf(self):
+        """Logo à esquerda + barra escura com o telefone em destaque à
+        direita, e uma linha menor com CNPJ/endereço abaixo da logo (o
+        telefone já aparece na barra, não repete aqui)."""
+
+        logo_uri = _logo_data_uri()
+        logo_html = (
+            f'<img src="{logo_uri}" width="140">'
+            if logo_uri
+            else f'<span style="font-size:20pt; font-weight:bold;">{self._nome_empresa()}</span>'
+        )
+
+        telefone = self.configuracao["telefone"] if self.configuracao else ""
+        barra_telefone = ""
+        if telefone:
+            barra_telefone = (
+                f'<table width="100%" cellspacing="0" cellpadding="10" '
+                f'style="background-color:{COR_ESCURA};"><tr>'
+                f'<td align="center">'
+                f'<span style="color:#FFFFFF; font-size:16pt; font-weight:bold;">'
+                f"Tel.: {telefone}</span>"
+                f"</td></tr></table>"
+            )
+
+        linhas_secundarias = []
+        if self.configuracao:
+            if self.configuracao["endereco"]:
+                linhas_secundarias.append(self.configuracao["endereco"])
+            if self.configuracao["cnpj"]:
+                linhas_secundarias.append(f"CNPJ: {self.configuracao['cnpj']}")
+        texto_secundario = " | ".join(linhas_secundarias)
+        linha_secundaria_html = (
+            f'<p style="font-size:8pt; color:#555555;">{texto_secundario}</p>'
+            if texto_secundario
+            else ""
+        )
+
+        return f"""
+        <table width="100%" cellspacing="0" cellpadding="0" border="0">
+            <tr>
+                <td width="150" valign="middle">{logo_html}</td>
+                <td valign="middle" align="right">{barra_telefone}</td>
+            </tr>
+        </table>
+        {linha_secundaria_html}
+        <hr>
+        """
+
     def _html_pedido(self):
 
         linhas_itens = "".join(
             f"<tr>"
-            f"<td>{item['produto_nome']}{' (SP)' if item['sp'] else ''}</td>"
-            f"<td>{item['produto_unidade']}</td>"
-            f"<td align='right'>{item['quantidade']:g}</td>"
+            f"<td align='center'>{item['quantidade']:g}</td>"
+            f"<td align='center'>{item['produto_unidade']}</td>"
+            f"<td align='left'>{item['produto_nome']}{' (SP)' if item['sp'] else ''}</td>"
             f"<td align='right'>R$ {item['preco_unitario']:.2f}</td>"
             f"<td align='right'>R$ {item['subtotal']:.2f}</td>"
             f"</tr>"
             for item in self.itens
         )
 
-        contato_empresa = " | ".join(self._linhas_contato_empresa())
-        cabecalho_contato = f"<p align='center'>{contato_empresa}</p>" if contato_empresa else ""
-
         return f"""
-        <h1 align="center">{self._nome_empresa()}</h1>
-        {cabecalho_contato}
-        <hr>
-        <h2>Pedido #{self.pedido_id}</h2>
-        <p>
-            <b>Cliente:</b> {self.pedido['cliente_nome']}<br>
-            <b>Data de emissão:</b> {formatar_data_hora(self.pedido['data_emissao'])}
+        {self._html_cabecalho_pdf()}
+        <p style="font-size:11pt;">
+            <span style="color:{COR_VERDE};"><b>Cliente:</b></span> {self.pedido['cliente_nome']}<br>
+            <span style="color:{COR_VERDE};"><b>Pedido</b></span> #{self.pedido_id}<br>
+            <span style="color:{COR_VERDE};"><b>Emissão:</b></span> {formatar_data_hora(self.pedido['data_emissao'])}
         </p>
-        <table width="100%" border="1" cellspacing="0" cellpadding="4">
-            <tr>
-                <th>Produto</th><th>Unidade</th><th>Quantidade</th>
-                <th>Preço Unit.</th><th>Subtotal</th>
+        <table width="100%" border="1" cellspacing="0" cellpadding="6">
+            <tr style="background-color:{COR_ESCURA}; color:#FFFFFF;">
+                <th>Quantidade</th><th>Unid.</th><th>Discriminação</th>
+                <th>Unitário</th><th>TOTAL</th>
             </tr>
             {linhas_itens}
+            <tr style="background-color:{COR_ESCURA}; color:#FFFFFF;">
+                <td colspan="4" align="right"><b>TOTAL</b></td>
+                <td align="right">
+                    <span style="font-size:14pt;"><b>R$ {self.pedido['total']:.2f}</b></span>
+                </td>
+            </tr>
         </table>
-        <h3 align="right">Total: R$ {self.pedido['total']:.2f}</h3>
         """
 
     def imprimir_pdf(self):
@@ -666,83 +755,135 @@ class DetalhesPedidoDialog(QDialog):
     # Impressão em cupom térmico
     # ==========================
 
-    # Tomate MDK-082: bobina de 80mm. Usamos a largura cheia do papel —
-    # como o conteúdo é montado com tabelas de largura 100% (não mais
-    # caracteres fixos), ele se ajusta sozinho à área real que o driver
-    # liberar, sem risco de estourar e cortar texto.
-    LARGURA_IMPRIMIVEL_MM = 80
+    # Tomate MDK-082: bobina de 80mm. Usamos a largura cheia do papel como
+    # tamanho de página — como o conteúdo é montado com tabelas de largura
+    # 100% (não mais caracteres fixos), ele se ajusta sozinho à área real
+    # disponível, sem risco de estourar e cortar texto.
+    LARGURA_PAPEL_MM = 80
 
-    # Espaço extra deixado após o total antes do corte automático da
-    # guilhotina — pequeno o bastante para não desperdiçar papel, grande
-    # o bastante para a lâmina não cortar em cima do texto do total.
+    # Margem visual nas bordas do cupom (topo, base e laterais). Pequena de
+    # propósito: bobina térmica tem pouca largura útil (~72mm de área
+    # imprimível numa bobina de 80mm) e cada milímetro perdido nas margens
+    # é conteúdo a menos por linha.
+    MARGEM_MM = 2.5
+
+    # Espaço extra deixado após o total, além da margem acima, antes do
+    # corte automático da guilhotina — pequeno o bastante para não
+    # desperdiçar papel, grande o bastante para a lâmina não cortar em
+    # cima do texto do total.
     MARGEM_CORTE_MM = 4
+
+    def _html_cabecalho_cupom(self):
+        """Cabeçalho do cupom térmico: nome estilizado (a logo colorida vira
+        cinza-claro ilegível na fita "fácil" quando convertida para P&B numa
+        bobina de 80mm — testamos e descartamos essa opção), telefone em
+        destaque, e endereço/CNPJ pequenos, tudo centralizado."""
+
+        telefone = self.configuracao["telefone"] if self.configuracao else ""
+        linha_telefone = (
+            f'<div style="font-size:11pt; font-weight:bold;">Tel.: {telefone}</div>'
+            if telefone
+            else ""
+        )
+
+        linhas_secundarias = "".join(
+            f"{linha}<br>" for linha in self._linhas_contato_empresa() if not linha.startswith("Tel")
+        )
+        linha_secundaria_html = (
+            f'<div style="font-size:7pt;">{linhas_secundarias}</div>' if linhas_secundarias else ""
+        )
+
+        return f"""
+        <div style="text-align:center;">
+            <div style="font-size:13pt; font-weight:bold;">
+                {self._nome_empresa()}
+            </div>
+            {linha_telefone}
+            {linha_secundaria_html}
+        </div>
+        <hr>
+        """
 
     def _html_cupom(self):
 
-        contato_empresa = "".join(
-            f"{linha}<br>" for linha in self._linhas_contato_empresa()
+        cabecalho_colunas = (
+            '<div style="font-weight:bold;">Qtd / Item / Total</div>'
+            '<hr>'
         )
 
         linhas_itens = "".join(
-            f"<tr><td colspan='2'>{item['produto_nome']}{' (SP)' if item['sp'] else ''}</td></tr>"
-            f"<tr><td>{item['quantidade']:g} x R$ {item['preco_unitario']:.2f}</td>"
-            f"<td align='right'>R$ {item['subtotal']:.2f}</td></tr>"
+            f"<div><b>{item['produto_nome']}{' (SP)' if item['sp'] else ''}</b></div>"
+            f"<table width='100%' cellspacing='0' cellpadding='0'><tr>"
+            f"<td>{item['quantidade']:g} x R$ {item['preco_unitario']:.2f}</td>"
+            f"<td align='right'>R$ {item['subtotal']:.2f}</td>"
+            f"</tr></table>"
             for item in self.itens
         )
 
         return f"""
-        <div style="font-family:'Courier New'; font-size:9pt; text-align:center;">
-            <b>{self._nome_empresa()}</b><br>
-            {contato_empresa}
-        </div>
-        <hr>
         <div style="font-family:'Courier New'; font-size:9pt;">
+        {self._html_cabecalho_cupom()}
+        <div>
             Pedido #{self.pedido_id}<br>
             Cliente: {self.pedido['cliente_nome']}<br>
             Emissão: {formatar_data_hora(self.pedido['data_emissao'])}
         </div>
         <hr>
-        <table width="100%" style="font-family:'Courier New'; font-size:9pt;" cellspacing="0" cellpadding="0">
-            {linhas_itens}
-        </table>
+        {cabecalho_colunas}
+        {linhas_itens}
         <hr>
-        <table width="100%" style="font-family:'Courier New'; font-size:9pt;">
-            <tr><td align="right"><b>TOTAL: R$ {self.pedido['total']:.2f}</b></td></tr>
-        </table>
-        <hr>
+        <div style="text-align:right; font-size:13pt; font-weight:bold;">
+            TOTAL: R$ {self.pedido['total']:.2f}
+        </div>
+        </div>
         """
+
+    def _html_cupom_pagina_completa(self):
+        """Documento HTML autônomo (com <head>/<style>), pronto para abrir
+        no navegador e imprimir. @page com largura fixa e altura "auto" faz
+        o navegador ajustar a página ao tamanho real do conteúdo — uma
+        bobina contínua não tem "altura de página" fixa, então isso evita
+        o cálculo manual de altura que o pipeline QPrinter exigia."""
+
+        return f"""<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Cupom - Pedido #{self.pedido_id}</title>
+<style>
+    @page {{
+        size: {self.LARGURA_PAPEL_MM}mm auto;
+        margin: {self.MARGEM_MM}mm;
+    }}
+    body {{
+        margin: 0;
+        padding: 0 0 {self.MARGEM_CORTE_MM}mm 0;
+    }}
+    hr {{
+        border: none;
+        border-top: 1px solid #000;
+    }}
+    table {{
+        border-collapse: collapse;
+    }}
+</style>
+</head>
+<body>
+{self._html_cupom()}
+</body>
+</html>
+"""
 
     def imprimir_cupom(self):
 
         nome_cliente = _nome_arquivo_seguro(self.pedido["cliente_nome"])
+        nome_arquivo = f"Cupom {self.pedido_id} - {nome_cliente}.html"
 
-        documento = QTextDocument()
-        documento.setDefaultFont(QFont("Courier New", 9))
-        documento.setHtml(self._html_cupom())
+        PASTA_CUPONS.mkdir(parents=True, exist_ok=True)
+        caminho = PASTA_CUPONS / nome_arquivo
+        caminho.write_text(self._html_cupom_pagina_completa(), encoding="utf-8")
 
-        # a altura precisa ser calculada e aplicada ANTES de abrir o diálogo
-        # de impressão: em impressoras físicas reais (ao contrário de um
-        # "Microsoft Print to PDF"), o driver trava o tamanho de página
-        # assim que o diálogo é aberto, então ajustar depois de aceito é
-        # ignorado e o conteúdo restante vai para uma segunda página/corte.
-        largura_pt = self.LARGURA_IMPRIMIVEL_MM * 72.0 / 25.4
-        documento.setTextWidth(largura_pt)
-        altura_mm = (documento.size().height() * 25.4 / 72.0) + self.MARGEM_CORTE_MM
-
-        impressora = QPrinter(QPrinter.PrinterMode.HighResolution)
-        impressora.setPageSize(
-            QPageSize(QSizeF(self.LARGURA_IMPRIMIVEL_MM, altura_mm), QPageSize.Unit.Millimeter)
-        )
-        impressora.setPageMargins(QMarginsF(0, 0, 0, 0), QPageLayout.Unit.Millimeter)
-        impressora.setDocName(f"Pedido {self.pedido_id} - {nome_cliente}")
-
-        dialogo = QPrintDialog(impressora, self)
-        dialogo.setWindowTitle("Imprimir cupom")
-
-        if dialogo.exec() != QDialog.Accepted:
-            return
-
-        documento.print_(impressora)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(caminho)))
 
     # ==========================
     # Excluir / navegar para cliente

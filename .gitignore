@@ -9,3 +9,6 @@ venv/
 
 .vscode/
 .idea/
+
+# cupons térmicos gerados como HTML (dados de pedidos/clientes, não é código)
+relatorios/*.html
