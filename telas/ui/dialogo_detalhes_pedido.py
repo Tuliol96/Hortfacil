@@ -825,7 +825,7 @@ class DetalhesPedidoDialog(QDialog):
         {self._html_cabecalho_cupom()}
         <div>
             Pedido #{self.pedido_id}<br>
-            Cliente: {self.pedido['cliente_nome']}<br>
+            Cliente: <b>{self.pedido['cliente_nome']}</b><br>
             Emissão: {formatar_data_hora(self.pedido['data_emissao'])}
         </div>
         <hr>

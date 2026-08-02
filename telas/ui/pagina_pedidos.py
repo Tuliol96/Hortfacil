@@ -402,7 +402,28 @@ class PaginaPedidos(QWidget):
         self.botao_adicionar_item.setText("Adicionar item")
         self.botao_cancelar_edicao_item.setVisible(False)
 
+    def _avisar_se_produto_duplicado(self, produto_id, nome, indice_ignorar=None):
+        """Não bloqueia — é comum lançar o mesmo produto mais de uma vez de
+        propósito, mas costuma ser engano de digitação. Só chama atenção."""
+
+        ja_existe = any(
+            item["produto_id"] == produto_id
+            for indice, item in enumerate(self.itens_pedido)
+            if indice != indice_ignorar
+        )
+
+        if not ja_existe:
+            return
+
+        QMessageBox.warning(
+            self,
+            "Produto repetido",
+            f"<b>\"{nome}\" já está neste pedido.</b>",
+        )
+
     def adicionar_item(self, produto_id, nome, unidade, quantidade, preco_unitario, sp=False):
+
+        self._avisar_se_produto_duplicado(produto_id, nome)
 
         self.itens_pedido.append({
             "produto_id": produto_id,
@@ -461,6 +482,10 @@ class PaginaPedidos(QWidget):
             "preco_unitario": preco_unitario,
             "sp": self.checkbox_sp.isChecked(),
         }
+
+        self._avisar_se_produto_duplicado(
+            produto["id"], produto["nome"], self.indice_item_selecionado
+        )
 
         if self.indice_item_selecionado is not None:
             self.itens_pedido[self.indice_item_selecionado] = item
