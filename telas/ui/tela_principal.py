@@ -15,6 +15,7 @@ from telas.ui.pagina_fechamentos import PaginaFechamentos
 from telas.ui.pagina_inicio import PaginaInicio
 from telas.ui.pagina_pedidos import PaginaPedidos
 from telas.ui.pagina_produtos import PaginaProdutos
+from telas.ui.pagina_relatorios import PaginaRelatorios
 
 
 def _pagina_em_construcao(titulo):
@@ -116,7 +117,7 @@ class TelaPrincipal(QMainWindow):
         self.stack.addWidget(PaginaProdutos(self.banco))
         self.stack.addWidget(_pagina_em_construcao("Estoque"))
         self.stack.addWidget(PaginaFechamentos(self.banco))
-        self.stack.addWidget(_pagina_em_construcao("Relatórios"))
+        self.stack.addWidget(PaginaRelatorios(self.banco))
         self.stack.addWidget(PaginaConfiguracoes(self.banco))
 
         self.pagina_pedidos.solicitou_ver_cliente.connect(self.mostrar_cliente)
