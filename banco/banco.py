@@ -140,6 +140,26 @@ class Banco:
         self._migrar_sp_pedido_itens()
 
         # ==========================
+        # TABELA DE LEMBRETES
+        # ==========================
+
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS lembretes (
+
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+                mensagem TEXT NOT NULL,
+
+                data_hora TEXT NOT NULL,
+
+                disparado INTEGER NOT NULL DEFAULT 0,
+
+                criado_em TEXT DEFAULT CURRENT_TIMESTAMP
+
+            )
+        """)
+
+        # ==========================
         # CONFIGURAÇÕES DA EMPRESA (linha única)
         # ==========================
 

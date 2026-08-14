@@ -1,40 +1,25 @@
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QHBoxLayout,
-    QLabel,
     QListWidget,
     QMainWindow,
+    QMessageBox,
     QStackedWidget,
-    QVBoxLayout,
     QWidget,
 )
 
+from controllers.lembrete_controller import LembreteController
 from telas.ui.pagina_clientes import PaginaClientes
 from telas.ui.pagina_configuracoes import PaginaConfiguracoes
 from telas.ui.pagina_fechamentos import PaginaFechamentos
 from telas.ui.pagina_inicio import PaginaInicio
+from telas.ui.pagina_lembretes import PaginaLembretes
 from telas.ui.pagina_pedidos import PaginaPedidos
 from telas.ui.pagina_produtos import PaginaProdutos
 from telas.ui.pagina_relatorios import PaginaRelatorios
 
-
-def _pagina_em_construcao(titulo):
-
-    pagina = QWidget()
-    layout = QVBoxLayout(pagina)
-
-    label = QLabel(f"{titulo}\n\n(em construção)")
-    label.setAlignment(Qt.AlignCenter)
-    label.setStyleSheet("""
-        font-size:20px;
-        color:#888;
-    """)
-
-    layout.addStretch()
-    layout.addWidget(label)
-    layout.addStretch()
-
-    return pagina
+# Intervalo de verificação de lembretes vencidos.
+INTERVALO_VERIFICACAO_LEMBRETES_MS = 30_000
 
 
 class TelaPrincipal(QMainWindow):
@@ -44,7 +29,7 @@ class TelaPrincipal(QMainWindow):
         "📋 Pedidos",
         "👥 Clientes",
         "🥬 Produtos",
-        "📦 Estoque",
+        "🔔 Lembretes",
         "💰 Financeiro",
         "📊 Relatórios",
         "⚙ Configurações",
@@ -54,11 +39,13 @@ class TelaPrincipal(QMainWindow):
         super().__init__()
 
         self.banco = banco
+        self.lembrete_controller = LembreteController(banco)
 
         self.setWindowTitle("Sistema da Distribuidora")
         self.resize(1200, 700)
 
         self.montar_interface()
+        self.iniciar_verificacao_lembretes()
 
     def montar_interface(self):
 
@@ -115,7 +102,7 @@ class TelaPrincipal(QMainWindow):
         self.stack.addWidget(self.pagina_pedidos)
         self.stack.addWidget(self.pagina_clientes)
         self.stack.addWidget(PaginaProdutos(self.banco))
-        self.stack.addWidget(_pagina_em_construcao("Estoque"))
+        self.stack.addWidget(PaginaLembretes(self.banco))
         self.stack.addWidget(PaginaFechamentos(self.banco))
         self.stack.addWidget(PaginaRelatorios(self.banco))
         self.stack.addWidget(PaginaConfiguracoes(self.banco))
@@ -137,3 +124,25 @@ class TelaPrincipal(QMainWindow):
         self.stack.setCurrentIndex(indice)
         self.menu.setCurrentRow(indice - 1)
         self.pagina_clientes.selecionar_cliente_por_id(cliente_id)
+
+    # ==========================
+    # Lembretes
+    # ==========================
+
+    def iniciar_verificacao_lembretes(self):
+
+        self.timer_lembretes = QTimer(self)
+        self.timer_lembretes.setInterval(INTERVALO_VERIFICACAO_LEMBRETES_MS)
+        self.timer_lembretes.timeout.connect(self.verificar_lembretes)
+        self.timer_lembretes.start()
+
+        # roda uma vez já na abertura: se o app ficou fechado na hora
+        # marcada de algum lembrete, ele é exibido agora, sem esperar o
+        # primeiro intervalo do timer.
+        self.verificar_lembretes()
+
+    def verificar_lembretes(self):
+
+        for lembrete in self.lembrete_controller.listar_vencidos():
+            QMessageBox.information(self, "Lembrete", lembrete["mensagem"])
+            self.lembrete_controller.marcar_disparado(lembrete["id"])
