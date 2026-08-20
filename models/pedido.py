@@ -21,3 +21,4 @@ class ItemPedido:
     preco_unitario: float = 0.0
     subtotal: float = 0.0
     sp: bool = False
+    hidro: bool = False
