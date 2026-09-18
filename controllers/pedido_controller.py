@@ -32,18 +32,19 @@ class PedidoController:
         return self.repository.resumo_produtos_por_cliente_periodo(cliente_id, data_inicio, data_fim)
 
     def criar_pedido(self, cliente_id, itens):
-        """itens: lista de tuplas (produto_id, quantidade, preco_unitario, sp, hidro)"""
+        """itens: lista de tuplas (produto_id, quantidade, preco_unitario, sp, hidro, nao_cobrar)"""
 
         itens_pedido = [
             ItemPedido(
                 produto_id=produto_id,
                 quantidade=quantidade,
                 preco_unitario=preco_unitario,
-                subtotal=round(quantidade * preco_unitario, 2),
+                subtotal=0.0 if nao_cobrar else round(quantidade * preco_unitario, 2),
                 sp=sp,
                 hidro=hidro,
+                nao_cobrar=nao_cobrar,
             )
-            for produto_id, quantidade, preco_unitario, sp, hidro in itens
+            for produto_id, quantidade, preco_unitario, sp, hidro, nao_cobrar in itens
         ]
 
         total = round(sum(item.subtotal for item in itens_pedido), 2)
@@ -53,18 +54,19 @@ class PedidoController:
         return self.repository.inserir(pedido, itens_pedido)
 
     def atualizar_pedido(self, pedido_id, itens):
-        """itens: lista de tuplas (produto_id, quantidade, preco_unitario, sp, hidro)"""
+        """itens: lista de tuplas (produto_id, quantidade, preco_unitario, sp, hidro, nao_cobrar)"""
 
         itens_pedido = [
             ItemPedido(
                 produto_id=produto_id,
                 quantidade=quantidade,
                 preco_unitario=preco_unitario,
-                subtotal=round(quantidade * preco_unitario, 2),
+                subtotal=0.0 if nao_cobrar else round(quantidade * preco_unitario, 2),
                 sp=sp,
                 hidro=hidro,
+                nao_cobrar=nao_cobrar,
             )
-            for produto_id, quantidade, preco_unitario, sp, hidro in itens
+            for produto_id, quantidade, preco_unitario, sp, hidro, nao_cobrar in itens
         ]
 
         total = round(sum(item.subtotal for item in itens_pedido), 2)

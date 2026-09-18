@@ -111,6 +111,9 @@ class PaginaPedidos(QWidget):
         self.checkbox_hidro = QCheckBox("Hidro")
         self.checkbox_hidro.setToolTip("Produto de cultivo hidropônico")
 
+        self.checkbox_nao_cobrar = QCheckBox("Não cobrar")
+        self.checkbox_nao_cobrar.setToolTip("Item não entra no total cobrado do pedido")
+
         self.botao_adicionar_item = QPushButton("Adicionar item")
         self.botao_adicionar_item.clicked.connect(self.salvar_item)
 
@@ -124,6 +127,7 @@ class PaginaPedidos(QWidget):
         linha_item.addWidget(self.campo_preco_unitario)
         linha_item.addWidget(self.checkbox_sp)
         linha_item.addWidget(self.checkbox_hidro)
+        linha_item.addWidget(self.checkbox_nao_cobrar)
         linha_item.addWidget(self.botao_adicionar_item)
         linha_item.addWidget(self.botao_cancelar_edicao_item)
         layout.addLayout(linha_item)
@@ -393,6 +397,7 @@ class PaginaPedidos(QWidget):
         self.campo_preco_unitario.setText(f"{item['preco_unitario']:.2f}")
         self._marcar_sp_sem_perguntar(item.get("sp", False))
         self.checkbox_hidro.setChecked(item.get("hidro", False))
+        self.checkbox_nao_cobrar.setChecked(item.get("nao_cobrar", False))
 
         self.botao_adicionar_item.setText("Atualizar item")
         self.botao_cancelar_edicao_item.setVisible(True)
@@ -404,6 +409,7 @@ class PaginaPedidos(QWidget):
         self._auto_preencher_preco(self.combo_produto.currentIndex())
         self._marcar_sp_sem_perguntar(False)
         self.checkbox_hidro.setChecked(False)
+        self.checkbox_nao_cobrar.setChecked(False)
         self.tabela_itens.clearSelection()
         self.botao_adicionar_item.setText("Adicionar item")
         self.botao_cancelar_edicao_item.setVisible(False)
@@ -427,7 +433,7 @@ class PaginaPedidos(QWidget):
             f"<b>\"{nome}\" já está neste pedido.</b>",
         )
 
-    def adicionar_item(self, produto_id, nome, unidade, quantidade, preco_unitario, sp=False, hidro=False):
+    def adicionar_item(self, produto_id, nome, unidade, quantidade, preco_unitario, sp=False, hidro=False, nao_cobrar=False):
 
         self._avisar_se_produto_duplicado(produto_id, nome)
 
@@ -439,6 +445,7 @@ class PaginaPedidos(QWidget):
             "preco_unitario": preco_unitario,
             "sp": sp,
             "hidro": hidro,
+            "nao_cobrar": nao_cobrar,
         })
         self.atualizar_tabela_itens()
 
@@ -489,6 +496,7 @@ class PaginaPedidos(QWidget):
             "preco_unitario": preco_unitario,
             "sp": self.checkbox_sp.isChecked(),
             "hidro": self.checkbox_hidro.isChecked(),
+            "nao_cobrar": self.checkbox_nao_cobrar.isChecked(),
         }
 
         self._avisar_se_produto_duplicado(
@@ -522,10 +530,15 @@ class PaginaPedidos(QWidget):
         total = 0.0
 
         for linha, item in enumerate(self.itens_pedido):
-            subtotal = item["quantidade"] * item["preco_unitario"]
+            subtotal = 0.0 if item.get("nao_cobrar") else item["quantidade"] * item["preco_unitario"]
             total += subtotal
 
-            nome = item["nome"] + (" (SP)" if item.get("sp") else "") + (" (Hidro)" if item.get("hidro") else "")
+            nome = (
+                item["nome"]
+                + (" (SP)" if item.get("sp") else "")
+                + (" (Hidro)" if item.get("hidro") else "")
+                + (" (Não cobrado)" if item.get("nao_cobrar") else "")
+            )
 
             self.tabela_itens.setItem(linha, 0, QTableWidgetItem(nome))
             self.tabela_itens.setItem(linha, 1, QTableWidgetItem(item["unidade"]))
@@ -665,7 +678,7 @@ class PaginaPedidos(QWidget):
         itens = [
             (
                 item["produto_id"], item["quantidade"], item["preco_unitario"],
-                item.get("sp", False), item.get("hidro", False),
+                item.get("sp", False), item.get("hidro", False), item.get("nao_cobrar", False),
             )
             for item in self.itens_pedido
         ]

@@ -22,3 +22,4 @@ class ItemPedido:
     subtotal: float = 0.0
     sp: bool = False
     hidro: bool = False
+    nao_cobrar: bool = False

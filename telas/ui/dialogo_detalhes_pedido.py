@@ -170,6 +170,9 @@ class DetalhesPedidoDialog(QDialog):
         self.checkbox_hidro = QCheckBox("Hidro")
         self.checkbox_hidro.setToolTip("Produto de cultivo hidropônico")
 
+        self.checkbox_nao_cobrar = QCheckBox("Não cobrar")
+        self.checkbox_nao_cobrar.setToolTip("Item não entra no total cobrado do pedido")
+
         self.botao_adicionar_item = QPushButton("Adicionar item")
         self.botao_adicionar_item.clicked.connect(self.salvar_item_edicao)
 
@@ -183,6 +186,7 @@ class DetalhesPedidoDialog(QDialog):
         linha_item.addWidget(self.campo_preco_unitario)
         linha_item.addWidget(self.checkbox_sp)
         linha_item.addWidget(self.checkbox_hidro)
+        linha_item.addWidget(self.checkbox_nao_cobrar)
         linha_item.addWidget(self.botao_adicionar_item)
         linha_item.addWidget(self.botao_cancelar_edicao_item)
 
@@ -300,7 +304,7 @@ class DetalhesPedidoDialog(QDialog):
             unidade = item["unidade"] if self.modo_edicao else item["produto_unidade"]
             quantidade = item["quantidade"]
             preco_unitario = item["preco_unitario"]
-            subtotal = round(quantidade * preco_unitario, 2)
+            subtotal = 0.0 if item["nao_cobrar"] else round(quantidade * preco_unitario, 2)
             total += subtotal
 
             if item["sp"]:
@@ -308,6 +312,9 @@ class DetalhesPedidoDialog(QDialog):
 
             if item["hidro"]:
                 nome += " (Hidro)"
+
+            if item["nao_cobrar"]:
+                nome += " (Não cobrado)"
 
             self.tabela_itens.setItem(linha, 0, QTableWidgetItem(nome))
             self.tabela_itens.setItem(linha, 1, QTableWidgetItem(unidade))
@@ -415,6 +422,7 @@ class DetalhesPedidoDialog(QDialog):
                 "preco_unitario": item["preco_unitario"],
                 "sp": bool(item["sp"]),
                 "hidro": bool(item["hidro"]),
+                "nao_cobrar": bool(item["nao_cobrar"]),
             }
             for item in self.itens
         ]
@@ -471,7 +479,7 @@ class DetalhesPedidoDialog(QDialog):
         itens = [
             (
                 item["produto_id"], item["quantidade"], item["preco_unitario"],
-                item["sp"], item["hidro"],
+                item["sp"], item["hidro"], item["nao_cobrar"],
             )
             for item in self.itens_edicao
         ]
@@ -515,6 +523,7 @@ class DetalhesPedidoDialog(QDialog):
         self.campo_preco_unitario.setText(f"{item['preco_unitario']:.2f}")
         self._marcar_sp_sem_perguntar(item.get("sp", False))
         self.checkbox_hidro.setChecked(item.get("hidro", False))
+        self.checkbox_nao_cobrar.setChecked(item.get("nao_cobrar", False))
 
         self.botao_adicionar_item.setText("Atualizar item")
         self.botao_cancelar_edicao_item.setVisible(True)
@@ -526,6 +535,7 @@ class DetalhesPedidoDialog(QDialog):
         self.campo_preco_unitario.clear()
         self._marcar_sp_sem_perguntar(False)
         self.checkbox_hidro.setChecked(False)
+        self.checkbox_nao_cobrar.setChecked(False)
         self.tabela_itens.clearSelection()
         self.botao_adicionar_item.setText("Adicionar item")
         self.botao_cancelar_edicao_item.setVisible(False)
@@ -577,6 +587,7 @@ class DetalhesPedidoDialog(QDialog):
             "preco_unitario": preco_unitario,
             "sp": self.checkbox_sp.isChecked(),
             "hidro": self.checkbox_hidro.isChecked(),
+            "nao_cobrar": self.checkbox_nao_cobrar.isChecked(),
         }
 
         if self.indice_item_selecionado is not None:
@@ -711,7 +722,7 @@ class DetalhesPedidoDialog(QDialog):
             f"<tr>"
             f"<td align='center'>{item['quantidade']:g}</td>"
             f"<td align='center'>{item['produto_unidade']}</td>"
-            f"<td align='left'>{item['produto_nome']}{' (SP)' if item['sp'] else ''}{' (Hidro)' if item['hidro'] else ''}</td>"
+            f"<td align='left'>{item['produto_nome']}{' (SP)' if item['sp'] else ''}{' (Hidro)' if item['hidro'] else ''}{' (Não cobrado)' if item['nao_cobrar'] else ''}</td>"
             f"<td align='right'>R$ {item['preco_unitario']:.2f}</td>"
             f"<td align='right'>R$ {item['subtotal']:.2f}</td>"
             f"</tr>"
@@ -826,7 +837,7 @@ class DetalhesPedidoDialog(QDialog):
         )
 
         linhas_itens = "".join(
-            f"<div><b>{item['produto_nome']}{' (SP)' if item['sp'] else ''}{' (Hidro)' if item['hidro'] else ''}</b></div>"
+            f"<div><b>{item['produto_nome']}{' (SP)' if item['sp'] else ''}{' (Hidro)' if item['hidro'] else ''}{' (Não cobrado)' if item['nao_cobrar'] else ''}</b></div>"
             f"<table width='100%' cellspacing='0' cellpadding='0'><tr>"
             f"<td>{item['quantidade']:g} x R$ {item['preco_unitario']:.2f}</td>"
             f"<td align='right'>R$ {item['subtotal']:.2f}</td>"

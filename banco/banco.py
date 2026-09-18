@@ -132,6 +132,8 @@ class Banco:
 
                 hidro INTEGER NOT NULL DEFAULT 0,
 
+                nao_cobrar INTEGER NOT NULL DEFAULT 0,
+
                 FOREIGN KEY (pedido_id) REFERENCES pedidos (id),
 
                 FOREIGN KEY (produto_id) REFERENCES produtos (id)
@@ -141,6 +143,7 @@ class Banco:
 
         self._migrar_sp_pedido_itens()
         self._migrar_hidro_pedido_itens()
+        self._migrar_nao_cobrar_pedido_itens()
 
         # ==========================
         # TABELA DE LEMBRETES
@@ -299,6 +302,22 @@ class Banco:
         if "hidro" not in colunas:
             self.cursor.execute(
                 "ALTER TABLE pedido_itens ADD COLUMN hidro INTEGER NOT NULL DEFAULT 0"
+            )
+            self.conexao.commit()
+
+    def _migrar_nao_cobrar_pedido_itens(self):
+        """
+        Bancos criados antes desta versão não têm a coluna 'nao_cobrar' em
+        pedido_itens. Adiciona a coluna, com os itens já existentes
+        marcados como cobrados normalmente.
+        """
+
+        self.cursor.execute("PRAGMA table_info(pedido_itens)")
+        colunas = {c["name"] for c in self.cursor.fetchall()}
+
+        if "nao_cobrar" not in colunas:
+            self.cursor.execute(
+                "ALTER TABLE pedido_itens ADD COLUMN nao_cobrar INTEGER NOT NULL DEFAULT 0"
             )
             self.conexao.commit()
 

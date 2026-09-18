@@ -18,8 +18,8 @@ class PedidoRepository:
         for item in itens:
             self.banco.cursor.execute("""
                 INSERT INTO pedido_itens
-                (pedido_id, produto_id, quantidade, preco_unitario, subtotal, sp, hidro)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (pedido_id, produto_id, quantidade, preco_unitario, subtotal, sp, hidro, nao_cobrar)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 pedido_id,
                 item.produto_id,
@@ -28,6 +28,7 @@ class PedidoRepository:
                 item.subtotal,
                 int(item.sp),
                 int(item.hidro),
+                int(item.nao_cobrar),
             ))
 
         self.banco.conexao.commit()
@@ -61,6 +62,7 @@ class PedidoRepository:
                 pedido_itens.subtotal,
                 pedido_itens.sp,
                 pedido_itens.hidro,
+                pedido_itens.nao_cobrar,
                 produtos.nome AS produto_nome,
                 produtos.unidade AS produto_unidade
             FROM pedido_itens
@@ -80,8 +82,8 @@ class PedidoRepository:
         for item in itens:
             self.banco.cursor.execute("""
                 INSERT INTO pedido_itens
-                (pedido_id, produto_id, quantidade, preco_unitario, subtotal, sp, hidro)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (pedido_id, produto_id, quantidade, preco_unitario, subtotal, sp, hidro, nao_cobrar)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 pedido_id,
                 item.produto_id,
@@ -90,6 +92,7 @@ class PedidoRepository:
                 item.subtotal,
                 int(item.sp),
                 int(item.hidro),
+                int(item.nao_cobrar),
             ))
 
         self.banco.cursor.execute("""
