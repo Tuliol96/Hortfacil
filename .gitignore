@@ -13,3 +13,4 @@ venv/
 # cupons e relatórios gerados (dados de pedidos/clientes, não é código)
 relatorios/*.html
 relatorios/**/*.pdf
+relatorios/**/*.html

@@ -10,6 +10,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMessageBox,
+    QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -17,7 +19,9 @@ from PySide6.QtWidgets import (
 )
 
 from controllers.cliente_controller import ClienteController
+from controllers.pedido_controller import PedidoController
 from telas.ui.dialogo_detalhes_pedido import _nome_arquivo_seguro
+from util.formatacao import formatar_data
 
 # Mesma pasta onde pagina_fechamentos.py salva os relatórios em PDF, uma
 # subpasta por cliente.
@@ -36,12 +40,92 @@ MESES = [
 ANOS_PARA_TRAS = 5
 ANOS_PARA_FRENTE = 1
 
+# Mesma especificação de papel usada no cupom de pedido (dialogo_detalhes_pedido.py).
+LARGURA_PAPEL_MM = 80
+MARGEM_MM = 2.5
+MARGEM_CORTE_MM = 4
+
 
 def _periodo_do_nome_arquivo(nome_arquivo):
     """'Relatorio 01-07-2026 a 03-08-2026' -> '01/07/2026 a 03/08/2026'"""
 
     texto = re.sub(r"^Relatorio\s+", "", nome_arquivo)
     return re.sub(r"(\d{2})-(\d{2})-(\d{4})", r"\1/\2/\3", texto)
+
+
+def _datas_iso_do_nome_arquivo(nome_arquivo):
+    """'Relatorio 01-07-2026 a 03-08-2026' -> ('2026-07-01', '2026-08-03')
+
+    Reconstrói o período original a partir do nome do arquivo, pra poder
+    consultar de novo os pedidos daquele intervalo (o PDF em si não guarda
+    os dados, só o texto renderizado)."""
+
+    (d1, m1, a1), (d2, m2, a2) = re.findall(r"(\d{2})-(\d{2})-(\d{4})", nome_arquivo)
+    return f"{a1}-{m1}-{d1}", f"{a2}-{m2}-{d2}"
+
+
+def _html_cupom_relatorio(cliente_nome, pedidos):
+    """Corpo do cupom: nome do cliente em caixa alta, datas à esquerda e
+    valores à direita, total em destaque no final."""
+
+    linhas = "".join(
+        f"<tr><td>{formatar_data(pedido['data_emissao'])}</td>"
+        f"<td align='right'>R$ {pedido['total']:.2f}</td></tr>"
+        for pedido in pedidos
+    )
+
+    total = sum(pedido["total"] for pedido in pedidos)
+
+    return f"""
+    <div style="font-family:'Courier New'; font-size:9pt;">
+        <div style="text-align:center; font-size:13pt; font-weight:bold;">
+            {cliente_nome.upper()}
+        </div>
+        <hr>
+        <table width="100%" cellspacing="0" cellpadding="0">
+            {linhas}
+        </table>
+        <hr>
+        <div style="text-align:right; font-size:13pt; font-weight:bold;">
+            TOTAL: R$ {total:.2f}
+        </div>
+    </div>
+    """
+
+
+def _html_cupom_relatorio_pagina_completa(cliente_nome, pedidos):
+    """Documento HTML autônomo, pronto pra abrir no navegador e imprimir —
+    mesma técnica do cupom de pedido: @page com largura fixa e altura
+    "auto", sem depender do pipeline QPrinter/driver do Qt."""
+
+    return f"""<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Cupom - {cliente_nome}</title>
+<style>
+    @page {{
+        size: {LARGURA_PAPEL_MM}mm auto;
+        margin: {MARGEM_MM}mm;
+    }}
+    body {{
+        margin: 0;
+        padding: 0 0 {MARGEM_CORTE_MM}mm 0;
+    }}
+    hr {{
+        border: none;
+        border-top: 1px solid #000;
+    }}
+    table {{
+        border-collapse: collapse;
+    }}
+</style>
+</head>
+<body>
+{_html_cupom_relatorio(cliente_nome, pedidos)}
+</body>
+</html>
+"""
 
 
 def _gerado_no_mes_ano(arquivo, mes, ano):
@@ -74,6 +158,7 @@ class PaginaRelatorios(QWidget):
 
         self.banco = banco
         self.cliente_controller = ClienteController(banco)
+        self.pedido_controller = PedidoController(banco)
 
         self.montar_interface()
         self.carregar_clientes()
@@ -150,6 +235,10 @@ class PaginaRelatorios(QWidget):
         self.tabela.itemDoubleClicked.connect(self._abrir_selecionado)
         self.tabela.setVisible(False)
         layout.addWidget(self.tabela)
+
+        self.botao_imprimir_cupom = QPushButton("Imprimir Cupom Térmico")
+        self.botao_imprimir_cupom.clicked.connect(self.imprimir_cupom_relatorio)
+        layout.addWidget(self.botao_imprimir_cupom)
 
     def carregar_clientes(self):
 
@@ -236,3 +325,43 @@ class PaginaRelatorios(QWidget):
             return
 
         QDesktopServices.openUrl(QUrl.fromLocalFile(caminho))
+
+    def imprimir_cupom_relatorio(self):
+        """Gera uma versão simplificada, em formato de cupom térmico, do
+        relatório selecionado na lista — mesmas datas e valores do PDF,
+        sem a tabela/cabeçalho completo."""
+
+        linhas = self.tabela.selectionModel().selectedRows()
+
+        if not linhas:
+            QMessageBox.warning(
+                self, "Nenhum relatório selecionado",
+                "Selecione um relatório na lista para imprimir o cupom."
+            )
+            return
+
+        caminho_relatorio = Path(self.tabela.item(linhas[0].row(), 0).data(CAMINHO_ARQUIVO))
+        data_inicio, data_fim = _datas_iso_do_nome_arquivo(caminho_relatorio.stem)
+
+        cliente_id = self.combo_cliente.currentData()
+        nome_cliente = self.combo_cliente.currentText()
+
+        pedidos = self.pedido_controller.listar_pedidos_por_cliente_periodo(
+            cliente_id, data_inicio, data_fim
+        )
+
+        if not pedidos:
+            QMessageBox.information(
+                self, "Nada para imprimir",
+                "Não há mais pedidos emitidos nesse período — "
+                "podem ter sido excluídos depois que o relatório foi gerado."
+            )
+            return
+
+        html = _html_cupom_relatorio_pagina_completa(nome_cliente, pedidos)
+
+        periodo_arquivo = caminho_relatorio.stem.replace("Relatorio ", "", 1)
+        caminho_cupom = caminho_relatorio.parent / f"Cupom {periodo_arquivo}.html"
+        caminho_cupom.write_text(html, encoding="utf-8")
+
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(caminho_cupom)))
